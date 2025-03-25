@@ -64,6 +64,7 @@
             :urlPrefix="urlPrefix"
             :uploadMethod="uploadMethod"
             :uploadFolder="uploadFolder"
+            :convertToWebp="convertToWebp"
             class="upload"
         />
         <el-dialog title="链接格式设置" v-model="showUrlDialog" :width="dialogWidth" :show-close="false">
@@ -154,6 +155,18 @@
                     </el-tooltip>
                     <el-slider class="compress-slider" v-model="compressQuality" :min="1" :max="compressBar" :format-tooltip="(value) => `${value} MB`" show-input/>
                 </el-form-item>
+                <el-form-item label="转换为WebP" v-if="uploadChannel === 'cfr2'">
+                    <el-tooltip content="将图片转换为WebP格式，可减小文件大小并保持画质" placement="top">
+                        <font-awesome-icon icon="question-circle" class="question-icon" size="me"/>
+                    </el-tooltip>
+                    <el-switch
+                        v-model="convertToWebp"
+                        active-text="开启"
+                        inactive-text="关闭"
+                        active-color="#13ce66"
+                        inactive-color="#ff4949"
+                    />
+                </el-form-item>
                 <p style="font-size: medium; font-weight: bold" v-if="uploadChannel === 'telegram'">服务端压缩
                     <el-tooltip content="1. 在 Telegram 端进行压缩，仅对上传渠道为 Telegram 的图片文件生效 <br> 2. 若图片大小（本地压缩后大小）大于10MB，本设置自动失效 <br> 3. 若上传分辨率过大、透明背景等图片，建议关闭服务端压缩，否则可能出现未知问题" placement="top" raw-content>
                         <font-awesome-icon icon="question-circle" class="question-icon" size="me"/>
@@ -208,6 +221,7 @@ export default {
             isToolBarOpen: false, //是否打开工具栏
             uploadMethod: 'default', //上传方式
             uploadFolder: '', // 添加上传文件夹属性
+            convertToWebp: false, //是否将图片转换为WebP格式
         }
     },
     watch: {
@@ -222,6 +236,9 @@ export default {
         },
         serverCompress(val) {
             this.updateCompressConfig('serverCompress', val)
+        },
+        convertToWebp(val) {
+            this.updateCompressConfig('convertToWebp', val)
         },
         uploadChannel(val) {
             this.updateStoreUploadChannel(val)
@@ -347,6 +364,7 @@ export default {
         this.compressQuality = this.compressConfig.compressQuality
         this.compressBar = this.compressConfig.compressBar
         this.serverCompress = this.compressConfig.serverCompress
+        this.convertToWebp = this.compressConfig.convertToWebp
         // 读取用户选择的上传渠道
         this.uploadChannel = this.storeUploadChannel
         // 用户定义的失败自动切换

@@ -225,6 +225,11 @@ props: {
         type: String,
         default: '',
         required: false
+    },
+    convertToWebp: {
+        type: Boolean,
+        default: false,
+        required: false
     }
 },
 data() {
@@ -472,10 +477,12 @@ methods: {
         })
     },
     beforeUpload(file) {
-        return new Promise((resolve, reject) => {
+        return new Promise(async (resolve, reject) => {
             // 客户端压缩条件：1.文件类型为图片 2.开启客户端压缩，且文件大小大于压缩阈值；或为Telegram渠道且文件大小大于20MB
             const needCustomCompress = file.type.includes('image') && ((this.customerCompress && file.size / 1024 / 1024 > this.compressBar) || (this.uploadChannel === 'telegram' && file.size / 1024 / 1024 > 20))
             const isLtLim = file.size / 1024 / 1024 < 20 || this.uploadChannel !== 'telegram'
+            // WebP转换条件：1.文件类型为图片 2.上传渠道为cfr2 3.开启WebP转换 4.文件不是WebP格式
+            const needConvertToWebp = file.type.includes('image') && this.uploadChannel === 'cfr2' && this.convertToWebp && !file.name.toLowerCase().endsWith('.webp')
 
             const pushFileToQueue = (file, serverCompress) => {
                 const fileUrl = URL.createObjectURL(file)
@@ -495,18 +502,76 @@ methods: {
                 resolve(file)
             }
 
+            // 将图片转换为WebP格式的函数
+            const convertToWebP = async (file) => {
+                try {
+                    // 创建一个canvas元素
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    
+                    // 创建图片元素并加载
+                    const img = new Image();
+                    img.src = URL.createObjectURL(file);
+                    
+                    // 等待图片加载完成
+                    return new Promise((resolve, reject) => {
+                        img.onload = () => {
+                            // 设置canvas尺寸与图片相同
+                            canvas.width = img.width;
+                            canvas.height = img.height;
+                            
+                            // 将图片绘制到canvas
+                            ctx.drawImage(img, 0, 0);
+                            
+                            // 将canvas转换为WebP格式的Blob
+                            canvas.toBlob((blob) => {
+                                if (blob) {
+                                    // 获取原文件名并将扩展名改为webp
+                                    const fileName = file.name.split('.').slice(0, -1).join('.') + '.webp';
+                                    
+                                    // 创建新的File对象
+                                    const webpFile = new File([blob], fileName, { type: 'image/webp' });
+                                    webpFile.uid = file.uid;
+                                    
+                                    resolve(webpFile);
+                                } else {
+                                    reject(new Error('转换WebP失败'));
+                                }
+                            }, 'image/webp', 0.9); // 0.9为WebP质量，可以根据需要调整
+                        };
+                        
+                        img.onerror = () => {
+                            reject(new Error('图片加载失败'));
+                        };
+                    });
+                } catch (error) {
+                    console.error('WebP转换失败:', error);
+                    return file; // 转换失败时返回原文件
+                }
+            };
+
+            // 如果需要转换为WebP，进行转换
+            let webpFile = file
+            if (needConvertToWebp) {
+                try {
+                    webpFile = await convertToWebP(file);
+                } catch (error) {
+                    console.error('WebP转换失败:', error);
+                }
+            }
+
             if (needCustomCompress) {
                 //尝试压缩图片
-                imageConversion.compressAccurately(file, 1024 * this.compressQuality).then((res) => {
+                imageConversion.compressAccurately(webpFile, 1024 * this.compressQuality).then((res) => {
                     //如果压缩后大于20MB，且上传渠道为telegram，则不上传
                     if (res.size / 1024 / 1024 > 20 && this.uploadChannel === 'telegram') {
-                        this.$message.error(file.name + '压缩后文件过大，无法上传!')
+                        this.$message.error(webpFile.name + '压缩后文件过大，无法上传!')
                         reject('文件过大')
                     }
                     this.uploading = true
                     //将res包装成新的file
-                    const newFile = new File([res], file.name, { type: res.type })
-                    newFile.uid = file.uid
+                    const newFile = new File([res], webpFile.name, { type: webpFile.type })
+                    newFile.uid = webpFile.uid
                     
                     const myUploadCount = this.uploadCount++
 
@@ -522,7 +587,7 @@ methods: {
                         }, 300 * myUploadCount)
                     }
                 }).catch((err) => {
-                    this.$message.error(file.name + '压缩失败，无法上传!')
+                    this.$message.error(webpFile.name + '压缩失败，无法上传!')
                     reject(err)
                 })
             } else if (isLtLim) {
@@ -531,18 +596,18 @@ methods: {
                 const myUploadCount = this.uploadCount++
 
                 // 开启服务端压缩条件：1.上传渠道为Telegram 2.开启服务端压缩 3.如果为图片，则文件大小小于10MB，否则不限制大小
-                const needServerCompress = this.uploadChannel === 'telegram' && this.serverCompress && (file.type.includes('image') ? file.size / 1024 / 1024 < 10 : true)
+                const needServerCompress = this.uploadChannel === 'telegram' && this.serverCompress && (webpFile.type.includes('image') ? webpFile.size / 1024 / 1024 < 10 : true)
 
                 if (myUploadCount === 0) {
-                    pushFileToQueue(file, needServerCompress)
+                    pushFileToQueue(webpFile, needServerCompress)
                 } else {
                     setTimeout(() => {
-                        pushFileToQueue(file, needServerCompress)
+                        pushFileToQueue(webpFile, needServerCompress)
                         this.uploadCount--
                     }, 300 * myUploadCount)
                 }
             } else {
-                this.$message.error(file.name + '文件过大，无法上传!')
+                this.$message.error(webpFile.name + '文件过大，无法上传!')
                 reject('文件过大')
             }
         })
